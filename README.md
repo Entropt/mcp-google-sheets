@@ -95,6 +95,7 @@ You're ready! Start issuing commands via your MCP client.
 *   **Easy Deployment:** Run instantly with `uvx` (zero-install feel) or clone for development using `uv`.
 *   **AI-Ready:** Designed for use with MCP-compatible clients, enabling natural language spreadsheet interaction.
 *   **Tool Filtering:** Reduce context window usage by enabling only the tools you need with `--include-tools` or `ENABLED_TOOLS` environment variable.
+*   **Image Support:** Upload images into cells and read images back out — including pictures embedded through the Sheets UI, which the Sheets REST API does not expose.
 
 ---
 
@@ -167,12 +168,16 @@ When filtering, use these exact tool names (comma-separated, no spaces):
 - `get_sheet_data`
 - `get_sheet_formulas`
 - `list_folders`
+- `list_sheet_images`
 - `list_sheets`
 - `list_spreadsheets`
+- `read_sheet_image`
 - `rename_sheet`
 - `search_spreadsheets`
 - `share_spreadsheet`
 - `update_cells`
+- `upload_image_to_cell`
+- `upload_image_to_drive`
 
 **Note:** If neither `--include-tools` nor `ENABLED_TOOLS` is specified, all tools are enabled (default behavior).
 
@@ -270,6 +275,62 @@ _Refer to the [ID Reference Guide](#-id-reference-guide) for more information ab
     *   `width` (optional integer, default `600`): Width of the chart in pixels.
     *   `height` (optional integer, default `400`): Height of the chart in pixels.
     *   _Returns:_ Result object with success status, chart ID, and operation details.
+
+### 🖼️ Image Tools
+
+The Google Sheets REST API v4 has **no image support whatsoever**: `CellData` has no
+image field and `batchUpdate` has no add-image request. Only Apps Script can create
+over-grid pictures or native in-cell (`CellImage`) values. These tools work around
+that limitation entirely through REST:
+
+*   **Writing** uploads the image to Google Drive, shares it with link-readers, and
+    writes an `=IMAGE("url")` formula into the target cell.
+*   **Reading** pulls `=IMAGE()` formulas straight from the Sheets API, and recovers
+    genuinely embedded pictures (over-grid images and in-cell images added through the
+    Sheets UI) by exporting the spreadsheet to XLSX via the Drive API and unpacking
+    `xl/media` together with the drawing anchors that record which cell each picture
+    sits on.
+
+*   **`upload_image_to_cell`**: Places an image into a single cell.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (string): Name of the sheet/tab (e.g., "Sheet1").
+    *   `cell` (string): Single target cell in A1 notation (e.g., "B2").
+    *   `source` (string): Local file path, `http(s)` URL, `data:` URI, or base64 image
+        data. An `http(s)` URL that Sheets can already reach is used as-is and is not
+        copied to Drive.
+    *   `mode` (optional integer, default `1`): `IMAGE()` sizing mode — `1` fit to cell,
+        `2` stretch, `3` original size, `4` custom size.
+    *   `height` / `width` (optional integers): Pixel size, required when `mode` is `4`.
+    *   `drive_folder_id` (optional string): Drive folder to upload into. Defaults to `DRIVE_FOLDER_ID`.
+    *   `share_publicly` (optional boolean, default `true`): Share the uploaded Drive file
+        with anyone who has the link. Sheets cannot render the image without this unless
+        the file is already readable by every viewer of the spreadsheet.
+    *   _Returns:_ The formula written, the image URL, and the Drive upload details.
+*   **`list_sheet_images`**: Lists every image in a spreadsheet, from both storage mechanisms.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (optional string): Restrict the scan to one sheet/tab.
+    *   _Returns:_ For each image its sheet, anchor cell, `source` (`formula` or `embedded`),
+        mime type, size, and either the image URL or its `mediaPath` inside the export.
+*   **`read_sheet_image`**: Reads one image out of a spreadsheet and returns its bytes.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (string): Name of the sheet/tab holding the image.
+    *   `cell` (optional string): Cell in A1 notation holding an `=IMAGE()` formula or an
+        anchored picture.
+    *   `media_path` (optional string): Archive path from `list_sheet_images`
+        (e.g. `xl/media/image1.png`). Give either this or `cell`.
+    *   `save_to` (optional string): Local path to write the image to.
+    *   _Returns:_ The image inline when it is at most 750 KB, otherwise metadata naming
+        the file it was written to.
+*   **`upload_image_to_drive`**: Uploads an image to Drive and returns a URL usable in `=IMAGE()`.
+    *   `source` (string): Local file path, `http(s)` URL, `data:` URI, or base64 image data.
+    *   `name` (optional string): File name to store in Drive.
+    *   `drive_folder_id` (optional string): Drive folder to upload into.
+    *   `share_publicly` (optional boolean, default `true`): Share with anyone who has the link.
+    *   _Returns:_ The Drive file ID and a hotlinkable image URL.
+
+**Limits:** Drive rejects `files.export` for spreadsheets whose XLSX form exceeds 10 MB,
+so embedded images cannot be read out of workbooks above that size. Creating a true
+over-grid image still requires Apps Script and is out of scope here.
 
 **MCP Resources:**
 

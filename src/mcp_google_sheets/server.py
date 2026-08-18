@@ -1727,6 +1727,11 @@ def add_chart(spreadsheet_id: str,
         }
 
 
+# Imported for its side effect: registering the image tools on `mcp`.
+# Placed at the end of the module because images.py imports `tool` from here.
+from . import images  # noqa: E402,F401
+
+
 def main():
     _configure_logging()
 
