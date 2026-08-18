@@ -96,6 +96,7 @@ You're ready! Start issuing commands via your MCP client.
 *   **AI-Ready:** Designed for use with MCP-compatible clients, enabling natural language spreadsheet interaction.
 *   **Tool Filtering:** Reduce context window usage by enabling only the tools you need with `--include-tools` or `ENABLED_TOOLS` environment variable.
 *   **Image Support:** Upload images into cells and read images back out — including pictures embedded through the Sheets UI, which the Sheets REST API does not expose.
+*   **Cell Formatting:** Set background colours, text colours, fonts, alignment, and number formats with hex strings or colour names, instead of hand-written API JSON.
 
 ---
 
@@ -157,12 +158,15 @@ When filtering, use these exact tool names (comma-separated, no spaces):
 **All Available Tools:**
 - `add_columns`
 - `add_rows`
+- `batch_format_cells`
 - `batch_update`
 - `batch_update_cells`
 - `copy_sheet`
 - `create_sheet`
 - `create_spreadsheet`
 - `find_in_spreadsheet`
+- `format_cells`
+- `get_cell_formats`
 - `get_multiple_sheet_data`
 - `get_multiple_spreadsheet_summary`
 - `get_sheet_data`
@@ -275,6 +279,57 @@ _Refer to the [ID Reference Guide](#-id-reference-guide) for more information ab
     *   `width` (optional integer, default `600`): Width of the chart in pixels.
     *   `height` (optional integer, default `400`): Height of the chart in pixels.
     *   _Returns:_ Result object with success status, chart ID, and operation details.
+
+### 🎨 Formatting Tools
+
+`batch_update` already reaches every formatting request the API offers, but only by
+hand-writing raw API JSON: you have to look up the numeric sheet id, convert A1
+notation to half-open 0-based indices, express colours as 0..1 floats, and get the
+field mask right. These tools do that plumbing for you.
+
+Colours accept `#RRGGBB`, `#RGB`, a name (`red`, `lightgreen`, `lightblue`,
+`lightyellow`, `darkgray`, …), a dict of 0..1 floats, or `clear` to reset a colour to
+the default. Only the properties you pass are changed; the rest of the range keeps its
+existing formatting.
+
+*   **`format_cells`**: Sets the background colour and other formatting on one range.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (string): Name of the sheet/tab (e.g., "Sheet1").
+    *   `range` (string): Range in A1 notation (e.g., "B2", "A1:C10", "A:C", "1:5").
+    *   `background_color` (optional string): Cell fill.
+    *   `text_color` (optional string): Font colour.
+    *   `bold` / `italic` / `underline` / `strikethrough` (optional booleans).
+    *   `font_size` (optional integer): Size in points.
+    *   `font_family` (optional string): e.g. "Roboto".
+    *   `horizontal_alignment` (optional string): `LEFT`, `CENTER`, or `RIGHT`.
+    *   `vertical_alignment` (optional string): `TOP`, `MIDDLE`, or `BOTTOM`.
+    *   `wrap_strategy` (optional string): `OVERFLOW_CELL`, `LEGACY_WRAP`, `CLIP`, or `WRAP`.
+    *   `number_format` (optional string): One of `TEXT`, `NUMBER`, `PERCENT`, `CURRENCY`,
+        `DATE`, `TIME`, `DATE_TIME`, `SCIENTIFIC`, optionally followed by a colon and a
+        pattern (e.g. `PERCENT:0.0%`).
+    *   _Returns:_ Success status and the field mask that was applied.
+*   **`batch_format_cells`**: Applies different formatting to several ranges in one API call.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (string): Name of the sheet/tab.
+    *   `formats` (object): Map of A1 range to that range's formatting, using the same
+        option names as `format_cells`. For example:
+        ```json
+        {
+          "A1:D1": {"background_color": "#4a86e8", "text_color": "white", "bold": true},
+          "C2:C50": {"background_color": "lightgreen"},
+          "D2:D50": {"number_format": "PERCENT:0.0%"}
+        }
+        ```
+        A bad option or colour in any range aborts the whole batch before anything is sent.
+    *   _Returns:_ Success status and the list of ranges formatted.
+*   **`get_cell_formats`**: Reads back the formatting applied to a range.
+    *   `spreadsheet_id` (string): The spreadsheet ID (from its URL).
+    *   `sheet` (string): Name of the sheet/tab.
+    *   `range` (optional string): Range in A1 notation. Defaults to the whole sheet.
+    *   _Returns:_ A compact per-cell summary of background colour, text colour, and text
+        styling. Reads `userEnteredFormat`, not `effectiveFormat`, so it reports only
+        formatting somebody actually applied rather than the defaults the API resolves for
+        every populated cell.
 
 ### 🖼️ Image Tools
 
